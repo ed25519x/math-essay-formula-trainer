@@ -1,4 +1,4 @@
-import { Check, Code2, Eye, RotateCcw, X } from 'lucide-react'
+import { Check, Code2, Eye, RotateCcw, Sigma, X } from 'lucide-react'
 import { InlineMath } from 'react-katex'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { MathKeypad, type KeypadAction } from '@/components/MathKeypad'
 import { MathText } from '@/components/MathText'
 import { getChoices } from '@/lib/distractors'
+import { suggestKeysForEntry } from '@/lib/keySuggest'
 import { checkTexAnswer } from '@/lib/mathMatch'
 import type { FormulaEntry, Part } from '@/lib/formulas'
 import { isBlank } from '@/lib/formulas'
@@ -20,18 +21,42 @@ function BlankInput({
   value,
   correct,
   checked,
+  preview,
+  focused,
   onChange,
   onFocus,
+  onBlur,
   registerRef,
 }: {
   id: string
   value: string
   correct: boolean | null
   checked: boolean
+  /** 포커스가 없을 때 입력한 TeX를 렌더링해서 보여줄지 */
+  preview: boolean
+  focused: boolean
   onChange: (v: string) => void
   onFocus: () => void
+  onBlur: () => void
   registerRef: (el: HTMLInputElement | null) => void
 }) {
+  if (preview && !focused && value.trim() !== '') {
+    return (
+      <button
+        type="button"
+        onClick={onFocus}
+        disabled={checked}
+        className={cn(
+          'mx-1 inline-flex min-w-16 max-w-full items-center justify-center rounded-md border-2 px-2 py-1 text-center align-middle transition-colors',
+          !checked && 'border-input bg-background hover:border-primary/50',
+          checked && correct && 'border-success bg-success/10',
+          checked && correct === false && 'border-destructive bg-destructive/10',
+        )}
+      >
+        <InlineMath math={value} />
+      </button>
+    )
+  }
   return (
     <input
       id={id}
@@ -40,14 +65,17 @@ function BlankInput({
       onChange={(e) => onChange(e.target.value)}
       onFocus={onFocus}
       onClick={onFocus}
+      onBlur={onBlur}
       disabled={checked}
       placeholder="?"
       autoComplete="off"
       autoCapitalize="off"
       spellCheck={false}
       inputMode="text"
+      // 입력한 만큼 칸이 늘어나서 긴 수식도 가로 스크롤 없이 보인다
+      style={{ width: `min(100%, ${Math.max(6, value.length + 2)}ch)` }}
       className={cn(
-        'mx-1 inline-block w-24 sm:w-28 rounded-md border-2 bg-background px-2 py-1 text-center font-mono text-sm outline-none transition-colors',
+        'mx-1 inline-block max-w-full rounded-md border-2 bg-background px-2 py-1 text-center font-mono text-sm outline-none transition-colors',
         !checked && 'border-input focus:border-ring',
         checked && correct && 'border-success bg-success/10 text-success-foreground',
         checked && correct === false && 'border-destructive bg-destructive/10',
@@ -110,14 +138,26 @@ interface Props {
   mode: AnswerMode
   showSource: boolean
   onToggleSource: (v: boolean) => void
+  renderInput: boolean
+  onToggleRenderInput: (v: boolean) => void
 }
 
-export function FormulaCardView({ entry, onResult, cardKey, mode, showSource, onToggleSource }: Props) {
+export function FormulaCardView({
+  entry,
+  onResult,
+  cardKey,
+  mode,
+  showSource,
+  onToggleSource,
+  renderInput,
+  onToggleRenderInput,
+}: Props) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [checked, setChecked] = useState(false)
   const [overridden, setOverridden] = useState(false)
   const [revealed, setRevealed] = useState(false)
   const [activeBlankId, setActiveBlankId] = useState<string | null>(null)
+  const [focusedBlankId, setFocusedBlankId] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const pendingCaret = useRef<{ id: string; pos: number } | null>(null)
@@ -128,6 +168,7 @@ export function FormulaCardView({ entry, onResult, cardKey, mode, showSource, on
     setOverridden(false)
     setRevealed(false)
     setActiveBlankId(null)
+    setFocusedBlankId(null)
     inputRefs.current = {}
     let cancelled = false
     import('gsap').then(({ gsap }) => {
@@ -154,7 +195,7 @@ export function FormulaCardView({ entry, onResult, cardKey, mode, showSource, on
       }
       pendingCaret.current = null
     }
-  }, [values])
+  }, [values, focusedBlankId])
 
   const blankAnswers: Record<string, string[]> =
     entry.kind === 'formula'
@@ -164,6 +205,11 @@ export function FormulaCardView({ entry, onResult, cardKey, mode, showSource, on
             r.cells.filter((c) => c.blank).map((c) => [c.blank as string, c.answer ?? []]),
           ),
         )
+
+  const suggestions = useMemo(
+    () => (mode === 'type' ? suggestKeysForEntry(entry) : []),
+    [entry, mode],
+  )
 
   const choicesByBlank = useMemo(() => {
     if (mode !== 'choice') return {}
@@ -242,15 +288,24 @@ export function FormulaCardView({ entry, onResult, cardKey, mode, showSource, on
         />
       )
     }
+    const value = values[part.blank] ?? ''
     return (
       <BlankInput
         key={part.blank}
         id={part.blank}
-        value={values[part.blank] ?? ''}
+        value={value}
         checked={checked}
+        preview={renderInput}
+        focused={focusedBlankId === part.blank}
         correct={checked ? (results[part.blank] ?? false) : null}
         onChange={(v) => setBlankValue(part.blank, v)}
-        onFocus={() => setActiveBlankId(part.blank)}
+        onFocus={() => {
+          setActiveBlankId(part.blank)
+          setFocusedBlankId(part.blank)
+          // 렌더링 상태에서 탭했을 때 입력칸이 나타난 뒤 커서를 끝에 놓는다
+          pendingCaret.current = { id: part.blank, pos: value.length }
+        }}
+        onBlur={() => setFocusedBlankId((cur) => (cur === part.blank ? null : cur))}
         registerRef={(el) => {
           inputRefs.current[part.blank] = el
         }}
@@ -321,7 +376,7 @@ export function FormulaCardView({ entry, onResult, cardKey, mode, showSource, on
       {showSource && entry.kind === 'formula' && (
         <div className="mb-3 space-y-1 rounded-lg border border-dashed border-border bg-muted/30 p-3 font-mono text-xs text-muted-foreground">
           {entry.lines.map((line, i) => (
-            <div key={i} className="overflow-x-auto whitespace-pre">
+            <div key={i} className="whitespace-pre-wrap break-all">
               {sourceOfLine(line, checked)}
             </div>
           ))}
@@ -330,7 +385,11 @@ export function FormulaCardView({ entry, onResult, cardKey, mode, showSource, on
 
       {mode === 'type' && (
         <div className="mb-3">
-          <MathKeypad onAction={handleKeypadAction} disabled={checked || !activeBlankId} />
+          <MathKeypad
+            onAction={handleKeypadAction}
+            disabled={checked || !activeBlankId}
+            suggestions={suggestions}
+          />
         </div>
       )}
 
@@ -385,15 +444,32 @@ export function FormulaCardView({ entry, onResult, cardKey, mode, showSource, on
         )}
       </div>
 
-      <div className="mt-4 flex items-center justify-center gap-2">
-        <Checkbox
-          id={`src-${cardKey}`}
-          checked={showSource}
-          onCheckedChange={(v) => onToggleSource(v === true)}
-        />
-        <Label htmlFor={`src-${cardKey}`} className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground">
-          <Code2 className="size-3.5" /> LaTeX 코드 보기
-        </Label>
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={`src-${cardKey}`}
+            checked={showSource}
+            onCheckedChange={(v) => onToggleSource(v === true)}
+          />
+          <Label htmlFor={`src-${cardKey}`} className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground">
+            <Code2 className="size-3.5" /> LaTeX 코드 보기
+          </Label>
+        </div>
+        {mode === 'type' && (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={`prv-${cardKey}`}
+              checked={renderInput}
+              onCheckedChange={(v) => onToggleRenderInput(v === true)}
+            />
+            <Label
+              htmlFor={`prv-${cardKey}`}
+              className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground"
+            >
+              <Sigma className="size-3.5" /> 입력칸 수식으로 보기
+            </Label>
+          </div>
+        )}
       </div>
 
       {checked && (

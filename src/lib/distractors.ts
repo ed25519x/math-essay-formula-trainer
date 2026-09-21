@@ -1,5 +1,5 @@
 import { FORMULAS, isBlank, type FormulaEntry } from './formulas'
-import { normalizeTex } from './mathMatch'
+import { canonicalTex } from './mathMatch'
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr]
@@ -36,12 +36,12 @@ export function getChoices(
   correctAnswer: string,
   count = 4,
 ): string[] {
-  const seen = new Set<string>([normalizeTex(correctAnswer)])
+  const seen = new Set<string>([canonicalTex(correctAnswer)])
   const pool: string[] = []
 
   function addAll(candidates: string[]) {
     for (const c of candidates) {
-      const key = normalizeTex(c)
+      const key = canonicalTex(c)
       if (!seen.has(key)) {
         seen.add(key)
         pool.push(c)

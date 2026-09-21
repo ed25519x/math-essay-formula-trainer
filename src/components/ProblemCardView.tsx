@@ -18,6 +18,7 @@ function NumericField({
   correct,
   onCheck,
   autoFocus,
+  format,
 }: {
   value: string
   onChange: (v: string) => void
@@ -25,32 +26,62 @@ function NumericField({
   correct: boolean | null
   onCheck: () => void
   autoFocus?: boolean
+  format?: string
 }) {
   return (
-    <div className="flex items-center justify-center gap-2">
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !checked) onCheck()
-        }}
-        disabled={checked}
-        inputMode="decimal"
-        autoComplete="off"
-        autoFocus={autoFocus}
-        placeholder="숫자 입력"
-        className={cn(
-          'w-32 rounded-md border-2 bg-background px-3 py-2 text-center font-mono text-base outline-none transition-colors sm:w-40',
-          !checked && 'border-input focus:border-ring',
-          checked && correct && 'border-success bg-success/10',
-          checked && correct === false && 'border-destructive bg-destructive/10',
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="flex items-center justify-center gap-2">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !checked) onCheck()
+          }}
+          disabled={checked}
+          inputMode="decimal"
+          autoComplete="off"
+          autoFocus={autoFocus}
+          placeholder="숫자 입력"
+          className={cn(
+            'w-32 rounded-md border-2 bg-background px-3 py-2 text-center font-mono text-base outline-none transition-colors sm:w-40',
+            !checked && 'border-input focus:border-ring',
+            checked && correct && 'border-success bg-success/10',
+            checked && correct === false && 'border-destructive bg-destructive/10',
+          )}
+        />
+        {!checked && (
+          <Button onClick={onCheck} size="lg">
+            <Check className="size-4" /> 확인
+          </Button>
         )}
-      />
+      </div>
       {!checked && (
-        <Button onClick={onCheck} size="lg">
-          <Check className="size-4" /> 확인
-        </Button>
+        // 모바일 숫자 키보드에는 없는 기호들
+        <div className="flex items-center gap-1.5">
+          {['-', '/', '.'].map((ch) => (
+            <button
+              key={ch}
+              type="button"
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onChange(value + ch)}
+              className="h-7 w-9 rounded-md border border-input bg-background font-mono text-sm active:scale-95 active:bg-accent"
+            >
+              {ch}
+            </button>
+          ))}
+          <button
+            type="button"
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onChange(value.slice(0, -1))}
+            className="h-7 w-9 rounded-md border border-input bg-background text-xs active:scale-95 active:bg-accent"
+          >
+            ⌫
+          </button>
+        </div>
       )}
+      {format && !checked && <p className="text-[11px] text-muted-foreground">{format}</p>}
     </div>
   )
 }
@@ -58,7 +89,7 @@ function NumericField({
 function StepSource({ step, revealed }: { step: ProblemStep; revealed: boolean }) {
   if (!revealed) return null
   return (
-    <div className="mt-1 overflow-x-auto whitespace-pre rounded bg-muted/30 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+    <div className="mt-1 whitespace-pre-wrap break-all rounded bg-muted/30 px-2 py-1 font-mono text-[11px] text-muted-foreground">
       {step.prompt}
     </div>
   )
@@ -136,13 +167,17 @@ export function ProblemCardView({ instance, submode, onResult, cardKey, showSour
         <Badge variant={submode === 'assisted' ? 'default' : 'outline'}>
           {submode === 'assisted' ? '어시스트 모드' : '수동 모드'}
         </Badge>
+        <Badge variant="outline" title={`난이도 ${instance.difficulty}`}>
+          난이도 {'●'.repeat(instance.difficulty)}
+          <span className="opacity-30">{'●'.repeat(3 - instance.difficulty)}</span>
+        </Badge>
       </div>
       <h3 className="mb-3 text-center text-lg font-semibold">{instance.title}</h3>
 
       <div className="mb-4 rounded-lg border border-border bg-muted/40 p-4 text-center text-base leading-relaxed">
         <MathText text={instance.statement} />
         {showSource && (
-          <div className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-muted/30 px-2 py-1 text-left font-mono text-[11px] text-muted-foreground">
+          <div className="mt-2 whitespace-pre-wrap break-all rounded bg-muted/30 px-2 py-1 text-left font-mono text-[11px] text-muted-foreground">
             {instance.statement}
           </div>
         )}
@@ -169,6 +204,7 @@ export function ProblemCardView({ instance, submode, onResult, cardKey, showSour
                     correct={correct}
                     onCheck={() => checkStep(step)}
                     autoFocus={i === stepIndex}
+                    format={step.format}
                   />
                 </div>
                 {done && (
@@ -209,6 +245,7 @@ export function ProblemCardView({ instance, submode, onResult, cardKey, showSour
             correct={finalChecked ? finalCorrect : null}
             onCheck={handleFinalCheck}
             autoFocus={submode === 'manual'}
+            format={instance.final.format}
           />
         </div>
       )}
@@ -231,7 +268,7 @@ export function ProblemCardView({ instance, submode, onResult, cardKey, showSour
               <li key={i}>
                 <MathText text={line} />
                 {showSource && (
-                  <div className="mt-0.5 overflow-x-auto whitespace-pre-wrap rounded bg-background/60 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                  <div className="mt-0.5 whitespace-pre-wrap break-all rounded bg-background/60 px-2 py-1 font-mono text-[11px] text-muted-foreground">
                     {line}
                   </div>
                 )}

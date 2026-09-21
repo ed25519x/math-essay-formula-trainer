@@ -21,6 +21,7 @@ function shuffle<T>(arr: T[]): T[] {
 export function FormulaQuiz({ scope, onBack }: { scope: Set<Unit>; onBack: () => void }) {
   const [mode, setMode] = useState<AnswerMode>('type')
   const [showSource, setShowSource] = useState(false)
+  const [renderInput, setRenderInput] = useState(true)
   const [queue, setQueue] = useState(() => shuffle(FORMULAS.filter((f) => scope.has(f.unit))))
   const [index, setIndex] = useState(0)
   const [correctCount, setCorrectCount] = useState(0)
@@ -110,6 +111,8 @@ export function FormulaQuiz({ scope, onBack }: { scope: Set<Unit>; onBack: () =>
               mode={mode}
               showSource={showSource}
               onToggleSource={setShowSource}
+              renderInput={renderInput}
+              onToggleRenderInput={setRenderInput}
             />
           )}
         </>

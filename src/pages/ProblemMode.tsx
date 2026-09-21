@@ -1,34 +1,31 @@
-import { ArrowLeft, RotateCcw, Trophy } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { ArrowLeft, RotateCcw, Sparkles, Trophy } from 'lucide-react'
+import { useState } from 'react'
 import { ProblemCardView, type ProblemSubmode } from '@/components/ProblemCardView'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { PROBLEM_GENERATORS, type ProblemInstance } from '@/lib/problems'
+import type { ProblemInstance } from '@/lib/problems'
+import { createSession, nextProblem, recordResult, sessionSize, type SessionState } from '@/lib/session'
 import type { Unit } from '@/lib/types'
 
 const SESSION_LENGTH = 8
 
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const tmp = a[i]!
-    a[i] = a[j]!
-    a[j] = tmp
-  }
-  return a
+interface View {
+  session: SessionState
+  /** 방금 푼 세트를 그대로 다시 풀 때 쓰는 고정 목록 */
+  queue: ProblemInstance[] | null
+  current: ProblemInstance | null
+  answered: number
+  correct: number
 }
 
-function buildSession(scope: Set<Unit>): ProblemInstance[] {
-  const gens = PROBLEM_GENERATORS.filter((g) => scope.has(g.unit))
-  if (gens.length === 0) return []
-  const picks: ProblemInstance[] = []
-  const shuffled = shuffle(gens)
-  for (let i = 0; i < SESSION_LENGTH; i++) {
-    const gen = shuffled[i % shuffled.length]!
-    picks.push(gen.generate())
-  }
-  return shuffle(picks)
+function start(scope: Set<Unit>): View {
+  const session = createSession({ scope, length: SESSION_LENGTH })
+  return { session, queue: null, current: nextProblem(session), answered: 0, correct: 0 }
+}
+
+function replay(view: View): View {
+  const queue = [...view.session.served]
+  return { session: view.session, queue, current: queue[0] ?? null, answered: 0, correct: 0 }
 }
 
 export function ProblemMode({
@@ -41,32 +38,25 @@ export function ProblemMode({
   onBack: () => void
 }) {
   const [showSource, setShowSource] = useState(false)
-  const [queue, setQueue] = useState(() => buildSession(scope))
-  const [index, setIndex] = useState(0)
-  const [correctCount, setCorrectCount] = useState(0)
-  const [answeredCount, setAnsweredCount] = useState(0)
+  const [view, setView] = useState<View>(() => start(scope))
 
-  const total = queue.length
-  const current = queue[index]
-  const finished = index >= total
-
-  function restart() {
-    setQueue(buildSession(scope))
-    setIndex(0)
-    setCorrectCount(0)
-    setAnsweredCount(0)
-  }
+  const total = view.queue ? view.queue.length : sessionSize(view.session)
+  const finished = view.current === null
 
   function handleResult(correct: boolean) {
-    setAnsweredCount((c) => c + 1)
-    if (correct) setCorrectCount((c) => c + 1)
-    setIndex((i) => i + 1)
+    const { session, queue, current } = view
+    const answered = view.answered + 1
+    if (!queue && current) recordResult(session, current, correct)
+    setView({
+      session,
+      queue,
+      current: queue ? (queue[answered] ?? null) : nextProblem(session),
+      answered,
+      correct: view.correct + (correct ? 1 : 0),
+    })
   }
 
-  const accuracy = useMemo(
-    () => (answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0),
-    [answeredCount, correctCount],
-  )
+  const accuracy = view.answered > 0 ? Math.round((view.correct / view.answered) * 100) : 0
 
   if (total === 0) {
     return (
@@ -87,29 +77,27 @@ export function ProblemMode({
         </Button>
       </div>
 
-      {!finished && (
+      {!finished && view.current && (
         <>
           <div className="mb-4">
             <div className="mb-1.5 flex justify-between text-xs text-muted-foreground">
               <span>
-                {index + 1} / {total}
+                {view.answered + 1} / {total}
               </span>
               <span>
-                맞음 {correctCount} / {answeredCount}
+                맞음 {view.correct} / {view.answered}
               </span>
             </div>
-            <Progress value={(index / total) * 100} />
+            <Progress value={(view.answered / total) * 100} />
           </div>
-          {current && (
-            <ProblemCardView
-              instance={current}
-              cardKey={`${current.genId}-${index}`}
-              submode={submode}
-              onResult={handleResult}
-              showSource={showSource}
-              onToggleSource={setShowSource}
-            />
-          )}
+          <ProblemCardView
+            instance={view.current}
+            cardKey={`${view.current.genId}-${view.answered}`}
+            submode={submode}
+            onResult={handleResult}
+            showSource={showSource}
+            onToggleSource={setShowSource}
+          />
         </>
       )}
 
@@ -118,13 +106,16 @@ export function ProblemMode({
           <Trophy className="size-10 text-primary" />
           <div>
             <p className="text-2xl font-bold">
-              {correctCount} / {total}
+              {view.correct} / {view.answered}
             </p>
             <p className="text-sm text-muted-foreground">정답률 {accuracy}%</p>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={restart} size="lg">
-              <RotateCcw className="size-4" /> 다시 풀기
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button onClick={() => setView(start(scope))} size="lg">
+              <Sparkles className="size-4" /> 새 문제로 다시
+            </Button>
+            <Button onClick={() => setView(replay(view))} variant="secondary" size="lg">
+              <RotateCcw className="size-4" /> 같은 문제 다시
             </Button>
             <Button onClick={onBack} variant="outline" size="lg">
               홈으로
